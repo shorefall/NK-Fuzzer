@@ -7,13 +7,13 @@ RESET='\033[0m'
 # ASCII art
 echo -e "${RED}"
 cat << "EOF"
-                     __     _ ____                         
+                     __     _ ___
    ____  __  _______/ /__  (_) __/_  __________  ___  _____
   / __ \/ / / / ___/ / _ \/ / /_/ / / /_  /_  / / _ \/ ___/
- / / / / /_/ / /__/ /  __/ / __/ /_/ / / /_/ /_/  __/ /    
+ / / / / /_/ / /__/ /  __/ / __/ /_/ / / /_/ /_/  __/ /
 /_/ /_/\__,_/\___/_/\___/_/_/  \__,_/ /___/___/\___/_/   v1.0.3
 
-                               Made by Satya Prakash (0xKayala)
+                               Made by Satya Prakash (0xKayala) | Katana edit by @moscowchill
 EOF
 echo -e "${RESET}"
 
@@ -31,13 +31,8 @@ display_help() {
 # Get the current user's home directory
 home_dir=$(eval echo ~"$USER")
 
-excluded_extentions="png,jpg,gif,jpeg,swf,woff,svg,pdf,json,css,js,webp,woff,woff2,eot,ttf,otf,mp4,txt"
-
-# Check if ParamSpider is already cloned and installed
-if [ ! -d "$home_dir/ParamSpider" ]; then
-    echo "Cloning ParamSpider..."
-    git clone https://github.com/0xKayala/ParamSpider "$home_dir/ParamSpider"
-fi
+# Create output directory if it does not exist
+mkdir -p output
 
 # Check if nuclei fuzzing-templates are already cloned.
 if [ ! -d "$home_dir/nuclei-templates" ]; then
@@ -59,7 +54,13 @@ fi
 
 if ! command -v uro -up &> /dev/null; then
     echo "Installing uro..."
-    pip3 install uro
+    pip3 install uro --break-system-packages
+fi
+
+# Check if katana is installed, if not, install it
+if ! command -v katana -up &> /dev/null; then
+    echo "Installing Katana..."
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest
 fi
 
 # Parse command line arguments
@@ -98,13 +99,13 @@ output_file="output/allurls.yaml"
 
 # Step 2: Get the vulnerable parameters based on user input
 if [ -n "$domain" ]; then
-    echo "Running ParamSpider on $domain"
-    python3 "$home_dir/ParamSpider/paramspider.py" -d "$domain" --exclude "$excluded_extentions" --level high --quiet -o "output/$domain.yaml"
+    echo "Running Katana on $domain"
+    katana -u "$domain" -qurl -silent -o "output/$domain.yaml"
 elif [ -n "$filename" ]; then
-    echo "Running ParamSpider on URLs from $filename"
+    echo "Running Katana on URLs from $filename"
     while IFS= read -r line; do
-        python3 "$home_dir/ParamSpider/paramspider.py" -d "$line" --exclude "$excluded_extentions" --level high --quiet -o "output/${line}.yaml"
-        cat "output/${line}.yaml" >> "$output_file"  # Append to the combined output file
+        katana -u "$line" -f qurl -silent -c 30 -p 30 -ct 3m -kf robotstxt,sitemapxml -rl 500 -ef ttf,woff,svg,jpeg,jpg,png,ico,gif,css -H "X-Security-Research: ResponsibleDisclosure" -o "output/katana_out.yaml"
+        cat "output/katana_out.yaml" >> "$output_file"  # Append to the combined output file
     done < "$filename"
 fi
 
@@ -112,6 +113,7 @@ fi
 if [ -n "$domain" ] && [ ! -s "output/$domain.yaml" ]; then
     echo "No URLs found for the domain $domain. Exiting..."
     exit 1
+
 elif [ -n "$filename" ] && [ ! -s "$output_file" ]; then
     echo "No URLs found in the file $filename. Exiting..."
     exit 1
@@ -119,16 +121,17 @@ fi
 
 # Step 4: Run the Nuclei Fuzzing templates on the collected URLs
 echo "Running Nuclei on collected URLs"
-temp_file=$(mktemp)
+
 if [ -n "$domain" ]; then
+    temp_file=$(mktemp)
     # Use a temporary file to store the sorted and unique URLs
-    sort "output/$domain.yaml" | uro > "$temp_file"
-    httpx -silent -mc 200,301,302,403 -l "$temp_file" | nuclei -t "$home_dir/nuclei-templates" -dast -rl 05
+    sort "output/$domain.yaml" | uro --filters hasparams vuln > "$temp_file"
+    httpx -silent -mc 200,301,302,403 -l "$temp_file" | nuclei -t "$home_dir/nuclei-templates" -dast -s critical,high,medium -rl 7 -bs 2 -c 4
+
 elif [ -n "$filename" ]; then
-    sort "$output_file" | uro > "$temp_file"
-    httpx -silent -mc 200,301,302,403 -l "$temp_file" | nuclei -t "$home_dir/nuclei-templates" -dast -rl 05
+    sort "$output_file" | uro --filters hasparams vuln > "sortedtargets.lst"
+    httpx -silent -mc 200,301,302,403 -l "output/sortedtargets.lst" | nuclei -t "$home_dir/nuclei-templates" -dast -s critical,high,medium -rl 7 -bs 2 -c 4
 fi
-rm "$temp_file"  # Remove the temporary file
 
 # Step 6: End with a general message as the scan is completed
-echo "Scanning is completed - Happy Fuzzing"
+echo "Scanning and Fuzzing completed."
