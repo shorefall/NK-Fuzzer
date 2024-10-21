@@ -104,7 +104,7 @@ if [ -n "$domain" ]; then
 elif [ -n "$filename" ]; then
     echo "Running Katana on URLs from $filename"
     while IFS= read -r line; do
-        katana -list "$filename" -f qurl -silent -c 30 -p 30 -ct 3m -kf robotstxt,sitemapxml -rl 500 -ef ttf,woff,svg,jpeg,jpg,png,ico,gif,css -H "X-Security-Research: ResponsibleDisclosure" -o "output/katana_out.yaml"
+        katana -list "$filename" -f qurl -silent -ct 5m -kf robotstxt,sitemapxml -fr '/wp-json/' -rl 250 -ef png,jpg,gif,jpeg,swf,woff,svg,pdf,json,css,js,webp,woff,woff2,eot,ttf,otf,mp4,txt -H "X-Security-Research: ResponsibleDisclosure" -o "output/katana_out.yaml"
         cat "output/katana_out.yaml" >> "$output_file"  # Append to the combined output file
     done < "$filename"
 fi
